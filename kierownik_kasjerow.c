@@ -1,80 +1,89 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <sys/msg.h>
 #include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+#include <errno.h>
 #include "ipc.h"
 
 #define MAX_KASY 10
-#define MIN_KASY 2
-#define KLIENT_NA_KASE 10
+#define K 10
 #define MAX_KLIENCI 100
 
-typedef struct {
-    long mtype;
-    int klient_id;
-} komunikat;
+struct sembuf sem_open = {0, 1, 0};
+struct sembuf sem_close = {0, -1, 0};
 
-key_t shm_key, sem_key, msg_key;
-int shm_id, sem_id, msg_id;
-int *liczba_klientow;
-pid_t kasjerzy[MAX_KASY];
+int shm_id, sem_id, msg_id[MAX_KASY];
+int *shm_ptr;
 
-// Inicjalizacja pamieci dzielonej i semaforow
-void inicjalizuj_ipc() {
-    shm_key = create_key(".", 'a');
-    sem_key = create_key(".", 'b');
-    msg_key = create_key(".", 'c');
-    
-    shm_id = create_shared_memory(shm_key, sizeof(int), 0600);
-    liczba_klientow = (int *)attach_shared_memory(shm_id, 0);
-
-    sem_id = create_semaphore(sem_key, 1, 0600);
-
-    msg_id =  create_message_queue(msg_key, 0600);
-}
-
-// Tworzenie kasjerów
-void stworz_kasjerow(int liczba_kas) {
-    for (int i = 0; i < liczba_kas; i++) {
-        if ((kasjerzy[i] = fork()) == 0) {
-            execl("./kasjer", "kasjer", NULL);
-            perror("Blad uruchamiania kasjera");
-            exit(1);
-        }
-    }
-}
-
-// Zarzadzanie kasami
-void monitoruj_kasy() {
-    int liczba_kas = MIN_KASY;
-    stworz_kasjerow(liczba_kas);
-    while (1) {
-        sleep(5);
-        if (*liczba_klientow / KLIENT_NA_KASE + 1 > liczba_kas && liczba_kas < MAX_KASY) {
-            liczba_kas++;
-            stworz_kasjerow(1);
-        } else if (*liczba_klientow < KLIENT_NA_KASE * (liczba_kas - 1) && liczba_kas > MIN_KASY) {
-            kill(kasjerzy[--liczba_kas], SIGTERM);
-        }
-    }
-}
-
-// Zamkniecie kas na sygnał pozaru
-void zamknij_kasy(int sig) {
+void zamknij_kasy() {
     for (int i = 0; i < MAX_KASY; i++) {
-        if (kasjerzy[i] > 0) {
-            kill(kasjerzy[i], SIGTERM);
+        semctl(sem_id, i, SETVAL, 0);
+        kill(shm_ptr[i + 1], SIGTERM);
+        for (int i = 0; i < MAX_KASY; i++) {
+            remove_message_queue(i);
         }
     }
-    remove_message_queue(msg_id);
-    remove_semaphore(sem_id);
-    remove_shared_memory(shm_id);
-    exit(0);
+}
+
+void sygnal_handler(int signum) {
+    if (signum == SIGINT || signum == SIGTERM) {
+        zamknij_kasy();
+        shmdt(shm_ptr);
+        shmctl(shm_id, IPC_RMID, NULL);
+        semctl(sem_id, 0, IPC_RMID);
+        exit(0);
+    }
 }
 
 int main() {
-    signal(SIGUSR1, zamknij_kasy);
-    inicjalizuj_ipc();
-    monitoruj_kasy();
-    return 0;
+    key_t shm_key = create_key(".", 'm');
+    shm_id = create_shared_memory(shm_key, (MAX_KASY + 1) * sizeof(int), 0600);
+    shm_ptr = (int *)attach_shared_memory(shm_id, 0);
+    //shm_ptr[0] = 0;
+
+    key_t sem_key = create_key(".", 's');
+    sem_id = create_semaphore(sem_key, MAX_KASY, 0600);
+    for (int i = 0; i < 2; i++) {
+        set_semaphore(sem_id, i, 1);
+    }
+    for (int i = 2; i < MAX_KASY; i++) {
+        set_semaphore(sem_id, i, 0);
+    }
+    printf("kierownik\n");
+
+    for (int i = 0; i < MAX_KASY; i++) {
+        key_t msg_key = create_key(".", 'q' + i);
+        msg_id[i] = create_message_queue(msg_key, 0600);
+        if (fork() == 0) {
+            execl("./kasjer", "kasjer", (char *)NULL);
+            exit(1);
+        }
+    }
+
+    signal(SIGINT, sygnal_handler);
+    signal(SIGTERM, sygnal_handler);
+
+    while (1) {
+        sleep(2);
+        int klienci = shm_ptr[0];
+        int otwarte_kasy = 2;
+        for (int i = 2; i < MAX_KASY; i++) {
+            if (klienci > K * otwarte_kasy) {
+                set_semaphore(sem_id, i, 1);
+                otwarte_kasy++;
+            } else if (klienci < K * (otwarte_kasy - 1)) {
+                set_semaphore(sem_id, i, 0);
+                otwarte_kasy--;
+            }
+        }
+    }
+    for (int i = 0; i < MAX_KASY; i++) {
+        remove_message_queue(i);
+    }
+    exit(0);
 }
 
