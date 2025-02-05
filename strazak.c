@@ -1,43 +1,35 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
 #include <signal.h>
 #include "ipc.h"
 
-#define MAX_KASY 10
+int shm_id, sem_id, *shm_ptr;
 
-key_t shm_key, sem_key, msg_key;
-int shm_id, sem_id, msg_id;
-int *liczba_klientow;
-
-// Inicjalizacja połączenia z IPC
-void inicjalizuj_ipc() {
-    shm_key = create_key(".", 'a');
-    sem_key = create_key(".", 'b');
-    msg_key = create_key(".", 'c');
-    
-    shm_id = create_shared_memory(shm_key, sizeof(int), 0600);
-    liczba_klientow = (int *)attach_shared_memory(shm_id, 0);
-
-    sem_id = create_semaphore(sem_key, 1, 0600);
-
-    msg_id =  create_message_queue(msg_key, 0600);
-}
-
-// Wyslanie sygnalu pozaru
-void oglos_pozar() {
-    printf("STRAZAK: POZAR!\n");
-    kill(0, SIGUSR1);
-    
-    msgctl(msg_id, IPC_RMID, NULL);
-    semctl(sem_id, 0, IPC_RMID);
-    shmctl(shm_id, IPC_RMID, NULL);
-    printf("STRAŻAK: SKLEP ZAMKNIĘTY!\n");
+void alarm_handler(int sig) {
+    printf("ALARM! Ewakuacja klientów!\n");
+    //shm_ptr[0] = 0;
+    for (int i = 0; i < 10; i++) {
+        set_semaphore(sem_id, i, 0);
+    }
+    detach_shared_memory(shm_ptr);
+    remove_shared_memory(shm_id);
+    remove_semaphore(sem_id);
     exit(0);
 }
 
 int main() {
-    inicjalizuj_ipc();
-    printf("Strazak: nacisnij enter aby wywolac pozar.\n");
-    getchar();
-    oglos_pozar();
-    return 0;
-}
+    key_t shm_key = create_key(".", 'm');
+    shm_id = create_shared_memory(shm_key, 0, 0600);
+    shm_ptr = (int *)attach_shared_memory(shm_id, 0);
 
+    key_t sem_key = create_key(".", 's');
+    sem_id = create_semaphore(sem_key, 10, 0600);
+    printf("strazak\n");
+
+    signal(SIGINT, alarm_handler);
+    while (1) pause();
+}
