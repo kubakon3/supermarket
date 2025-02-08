@@ -1,35 +1,34 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <sys/sem.h>
-#include <signal.h>
-#include "ipc.h"
+#include "strazak.h"
 
-int shm_id, sem_id, *shm_ptr;
+// Funkcja do obsługi sygnału SIGINT
+void sigint_handler(int sig) {
+    if (sig == SIGINT) {
+        printf("Strażak: Otrzymano sygnał SIGINT. Wysyłanie sygnału SIGINT do wszystkich procesów potomnych...\n");
 
-void alarm_handler(int sig) {
-    printf("ALARM! Ewakuacja klientów!\n");
-    //shm_ptr[0] = 0;
-    for (int i = 0; i < 10; i++) {
-        set_semaphore(sem_id, i, 0);
+        // Wysyłanie sygnału SIGINT do wszystkich procesów potomnych w grupie
+        if (kill(0, SIGINT) == -1) {
+            perror("Błąd wysyłania sygnału SIGINT do procesów potomnych");
+        }
+
+        printf("Strażak: Sygnał SIGINT wysłany. Kończenie pracy wątku strażaka.\n");
+        pthread_exit(NULL); // Zakończenie wątku strażaka
     }
-    detach_shared_memory(shm_ptr);
-    remove_shared_memory(shm_id);
-    remove_semaphore(sem_id);
-    exit(0);
 }
 
-int main() {
-    key_t shm_key = create_key(".", 'm');
-    shm_id = create_shared_memory(shm_key, 0, 0600);
-    shm_ptr = (int *)attach_shared_memory(shm_id, 0);
+// Funkcja wykonywana przez wątek strażaka
+void *strazak(void *arg) {
+    // Rejestracja obsługi sygnału SIGINT
+    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału SIGINT");
+        pthread_exit(NULL);
+    }
 
-    key_t sem_key = create_key(".", 's');
-    sem_id = create_semaphore(sem_key, 10, 0600);
-    printf("strazak\n");
+    printf("Strażak: Wątek strażaka uruchomiony. Oczekiwanie na sygnał SIGINT (Ctrl+C)...\n");
 
-    signal(SIGINT, alarm_handler);
-    while (1) pause();
+    // Nieskończona pętla oczekująca na sygnał
+    while (1) {
+        pause(); // Oczekiwanie na sygnał
+    }
+
+    pthread_exit(NULL);
 }
