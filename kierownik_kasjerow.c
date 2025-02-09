@@ -108,7 +108,7 @@ int main() {
     // Pętla monitorująca stan kas
     while (1) {
         aktualizuj_kasy();
-        sleep(1); // Czekaj 1 sekundę przed kolejną aktualizacją
+        sleep(3); // Czekaj 1 sekundę przed kolejną aktualizacją
     }
 
     // Zakończenie programu ()

@@ -1,9 +1,9 @@
 #include "strazak.h"
 
 // Funkcja do obsługi sygnału SIGINT
-void sigint_handler(int sig) {
-    if (sig == SIGINT) {
-        printf("Strażak: Otrzymano sygnał SIGINT. Wysyłanie sygnału SIGINT do wszystkich procesów potomnych...\n");
+void sigusr_handler(int sig) {
+    if (sig == SIGUSR1) {
+        printf("Strażak: Otrzymano sygnał SIGUSR1. Wysyłanie sygnału SIGINT do wszystkich procesów potomnych...\n");
 
         // Wysyłanie sygnału SIGINT do wszystkich procesów potomnych w grupie
         if (kill(0, SIGINT) == -1) {
@@ -18,8 +18,8 @@ void sigint_handler(int sig) {
 // Funkcja wykonywana przez wątek strażaka
 void *strazak(void *arg) {
     // Rejestracja obsługi sygnału SIGINT
-    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału SIGINT");
+    if (signal(SIGUSR1, sigusr_handler) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału SIGUSR1");
         pthread_exit(NULL);
     }
 

@@ -16,12 +16,25 @@
 
 extern Sklep *sklep;
 extern int semID; // ID semafora
+pid_t pid_kierownik;
+pthread_t tid_strazak;
 
 void signal_handler(int sig) {
-    if (sig == SIGINT) {
-        printf("Pożar! Wszyscy klienci opuszczają sklep. Zamykamy kasy!\n");
-        sklep->liczba_klientow = 0;
-        sklep->liczba_kas = 2;
+    if (semaphore_p(semID, 0) == -1) { // dostęp do pamięci dzielonej
+        perror("Błąd semaphore_p w sygnale");
+        return;
+    }
+    
+    sklep->fire_flag = 1;
+    
+    if (semaphore_v(semID, 0) == -1) { // dostęp do pamięci dzielonej
+        perror("Błąd semaphore_v w sygnale");
+        return;
+    }
+    
+    if (pthread_kill(tid_strazak, SIGUSR1) != 0) {
+        perror("Błąd wysłania SIGUSR1 do strażaka");
+        exit(1);
     }
 }
 
@@ -34,6 +47,7 @@ int main() {
 
     sklep->liczba_klientow = 0;
     sklep->liczba_kas = 2;
+    sklep->fire_flag = 0;
 
     // Inicjalizacja semaforów
     semID = create_semaphore();
@@ -72,7 +86,7 @@ int main() {
     }
 
     // Tworzenie procesu kierownika kasjerów
-    pid_t pid_kierownik = fork();
+    pid_kierownik = fork();
     if (pid_kierownik == -1) {
         perror("Błąd forkowania procesu kierownika kasjerów");
         for (int i = 0; i < MAX_KASY; i++) {
@@ -89,7 +103,6 @@ int main() {
     }
 
     // Tworzenie wątku strażaka
-    pthread_t tid_strazak;
     if (pthread_create(&tid_strazak, NULL, (void*)strazak, NULL) != 0) {
         perror("Błąd tworzenia wątku strażaka");
         kill(pid_kierownik, SIGTERM);
@@ -102,7 +115,7 @@ int main() {
     }
 
     // Tworzenie procesów klientów 
-    while (1) {
+    while (!check_fire_flag(sklep)) {
         // Sprawdzanie ilości miejsc w sklepie
         if (semaphore_p(semID, 1) == -1) { // Semafor 1 (liczba klientów)
             perror("Sklep jest pełen");

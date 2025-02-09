@@ -29,6 +29,7 @@ typedef struct {
     int liczba_klientow;
     int liczba_kas;
     int kolejki_kas[MAX_KASY]; // id kolejek komunikatów
+    int fire_flag;
 } Sklep;
 
 // Struktura komunikatu
@@ -46,5 +47,7 @@ void set_semaphore(int semID, int number, int value);
 int semaphore_p(int semID, int number);
 int semaphore_v(int semID, int number);
 void remove_semaphore(int semID);
+
+int check_fire_flag(Sklep *sklep);
 
 #endif // IPC_H

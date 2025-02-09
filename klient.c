@@ -16,6 +16,21 @@
 extern Sklep *sklep;
 extern int semID; // ID semafora
 
+void customer_signal_handler(int sig) {
+    sklep->liczba_klientow--;
+    
+    if (semaphore_v(semID, 1) == -1) {
+        perror("Błąd zwiększania semafora klientów");
+        shmdt(sklep);
+        exit(1);
+    }
+    if (shmdt(sklep) == -1) {
+        perror("Błąd odłączania segmentu pamięci dzielonej");
+        exit(1);
+    }
+    exit(1);
+}
+
 int main() {
     srand(time(NULL));
 
@@ -29,6 +44,16 @@ int main() {
     if (semID == -1) {
         perror("Błąd dołączania semafora");
         shmdt(sklep);
+        exit(1);
+    }
+    
+    // Rejestracja obsługi sygnału SIGINT
+    if (signal(SIGINT, customer_signal_handler) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału");
+        if (shmdt(sklep) == -1) {
+            perror("Błąd odłączania segmentu pamięci dzielonej");
+            exit(1);
+        }
         exit(1);
     }
 

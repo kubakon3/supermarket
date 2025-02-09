@@ -44,8 +44,27 @@ void destroy_shared_memory(Sklep *sklep) {
     }
 }
 
+int check_fire_flag(Sklep *sklep) {
+    int semID = create_semaphore();
+    
+    if (semaphore_p(semID, 0) == -1) { // dostęp do pamięci dzielonej
+        perror("Błąd semaphore_p w sygnale");
+        return -1;
+    }
+    
+    int flag = sklep->fire_flag;
+    
+    if (semaphore_v(semID, 0) == -1) { // dostęp do pamięci dzielonej
+        perror("Błąd semaphore_v w sygnale");
+        return -1;
+    }
+    
+    return flag;
+}
+  
+
 int create_semaphore() {
-    int semID = semget(SEM_KEY, 2, IPC_CREAT | IPC_EXCL | 0600);
+    int semID = semget(SEM_KEY, 2, IPC_CREAT | 0600);
     if (semID == -1) {
         perror("Błąd tworzenia semafora");
         return -1;

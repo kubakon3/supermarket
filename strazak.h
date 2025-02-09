@@ -11,7 +11,7 @@
 #include <pthread.h>
 
 // Deklaracje funkcji
-void sigint_handler(int sig);
+void sigusr_handler(int sig);
 void *strazak(void *arg);
 
 #endif // STRAZAK_H
