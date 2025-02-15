@@ -118,7 +118,7 @@ int main() {
     while (!check_fire_flag(sklep)) {
         // Sprawdzanie ilości miejsc w sklepie
         if (semaphore_p(semID, 1) == -1) { // Semafor 1 (liczba klientów)
-            perror("Sklep jest pełen");
+            printf("Sklep jest pełen");
             sleep(4);
             continue;
         }
@@ -126,7 +126,7 @@ int main() {
         pid_t pid_klient = fork();
         if (pid_klient == -1) {
             perror("Błąd forkowania procesu klienta");
-            semaphore_v(semID, 1); // Zwolnienie miejsca w sklepie
+            semaphore_v(semID, 1);
             sleep(4);
             continue;
         } else if (pid_klient == 0) {
@@ -134,31 +134,44 @@ int main() {
                 perror("Błąd uruchamiania klient");
                 exit(1);
             }
+        } else {
+            if (semaphore_p(semID, 0) == -1) { 
+                perror("Błąd semaphore_p w main");
+                exit(1);
+            }
+            for (int i = 0; i < MAX_KLIENTOW; i++) {
+                if (sklep->klienci_pidy[i] == 0) {
+                    sklep->klienci_pidy[i] = pid_klient;
+                    break;
+                }
+            }
+            if (semaphore_v(semID, 0) == -1) { 
+                perror("Błąd semaphore_v w main");
+                exit(1);
+            }
         }
-        
-        sleep(rand() % 3 + 1);
+        sleep(1);
     }
 
     // Zakończenie wątku strażaka ()
-    if (pthread_cancel(tid_strazak) != 0) {
-        perror("Błąd zakończenia wątku strażaka");
-    }
     if (pthread_join(tid_strazak, NULL) != 0) {
         perror("Błąd oczekiwania na zakończenie wątku strażaka");
+    } else {
+        printf("zakończono wątek strażaka\n");
     }
 
-    // Zakończenie procesu kierownika kasjerów ()
-    if (kill(pid_kierownik, SIGTERM) == -1) {
-        perror("Błąd zakończenia procesu kierownika kasjerów");
-    }
     if (waitpid(pid_kierownik, NULL, 0) == -1) {
         perror("Błąd oczekiwania na zakończenie procesu kierownika kasjerów");
+    } else {
+        printf("zakończono proces kierownika kasjerów\n");
     }
 
     // Czyszczenie mechanizmów komunikacji ()
     for (int i = 0; i < MAX_KASY; i++) {
         if (msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL) == -1) {
             perror("Błąd usuwania kolejki komunikatów");
+        }  else {
+        printf("usunięto kasę\n");
         }
     }
 

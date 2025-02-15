@@ -15,20 +15,71 @@
 
 extern Sklep *sklep;
 extern int semID; // ID semafora
+int pid;
+
+// Funkcja do zwiększania liczby klientów
+void increment_customers() {
+    if (semaphore_p(semID, 0) == -1) { 
+        perror("Błąd semaphore_p w increment_customers");
+        exit(1);
+    }
+    sklep->liczba_klientow++;
+    if (semaphore_v(semID, 0) == -1) { 
+        perror("Błąd semaphore_v w increment_customers");
+        exit(1);
+    }
+}
+
+// Funkcja do zmniejszania liczby klientów
+void decrement_customers() {
+    if (semaphore_p(semID, 0) == -1) { 
+        perror("Błąd semaphore_p w decrement_customers");
+        exit(1);
+    }
+    sklep->liczba_klientow--;
+    if (semaphore_v(semID, 0) == -1) { 
+        perror("Błąd semaphore_v w decrement_customers");
+        exit(1);
+    }
+}
+
+// Funkcja do usuwania PID-u klienta z tablicy w pamięci dzielonej
+void remove_pid() {
+    if (semaphore_p(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+        perror("Błąd semaphore_p w remove_pid");
+        shmdt(sklep);
+        exit(1);
+    }
+    for (int i = 0; i < MAX_KLIENTOW; i++) {
+        if (sklep->klienci_pidy[i] == pid) {
+            sklep->klienci_pidy[i] = 0;
+            break;
+        }
+    }
+    if (semaphore_v(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+        perror("Błąd semaphore_v w remove_pid");
+        shmdt(sklep);
+        exit(1);
+    }
+}
 
 void customer_signal_handler(int sig) {
-    sklep->liczba_klientow--;
     
-    if (semaphore_v(semID, 1) == -1) {
+    decrement_customers();
+    
+    //ilość klientów w sklepie
+    if (semaphore_v(semID, 1) == -1) { 
         perror("Błąd zwiększania semafora klientów");
         shmdt(sklep);
         exit(1);
     }
+    
     if (shmdt(sklep) == -1) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);
     }
-    exit(1);
+    printf("Klient %d opuścił sklep\n", pid);
+    exit(0);
 }
 
 int main() {
@@ -59,8 +110,8 @@ int main() {
 
     // Symulacja klienta
     int czas = rand() % 3 + 1;
-    sklep->liczba_klientow++;
-    int pid = getpid();
+    increment_customers(); // Zwiększenie liczby klientów
+    pid = getpid();
 
     // Wybór kasy z najkrótszą kolejką
     int cashier_msg_id = -1; // indeks kasjera
@@ -123,7 +174,7 @@ int main() {
     }
 
     printf("Klient %d został obsłużony i wychodzi ze sklepu\n", pid);
-    sklep->liczba_klientow--;
+    decrement_customers(); // Zmniejszenie liczby klientów
     printf("Liczba klientów: %d\n", sklep->liczba_klientow);
 
     // Zwiększenie wartości semafora o 1 (zwolnienie miejsca dla nowego klienta)
@@ -132,6 +183,8 @@ int main() {
         shmdt(sklep);
         exit(1);
     }
+    
+    remove_pid();
 
     // Odłączenie pamięci dzielonej
     if (shmdt(sklep) == -1) {
