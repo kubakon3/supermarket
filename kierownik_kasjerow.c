@@ -18,64 +18,56 @@ extern int semID;
 
 pthread_t kasjerzy[MAX_KASY];
 extern int aktywne_kasy[MAX_KASY];
-/*
-void cashier_signal_handler(int sig) {    
-    if (semaphore_v(semID, 1) == -1) {
-        perror("Błąd zwiększania semafora klientów");
-        shmdt(sklep);
-        exit(1);
+
+// Funkcja obsługi sygnału SIGINT w kierowniku kasjerów
+void kierownik_signal_handler(int sig) {
+    if (sig == SIGINT) {
+        printf("Kierownik kasjerów otrzymał sygnał SIGINT. Kończenie pracy...\n");
+
+        for (int i = 0; i < MAX_KASY; i++) {
+            int flag = get_active_cashier(i);
+            if (flag == 1) {
+                void *status;
+                if (pthread_join(kasjerzy[i], &status) == -1) {
+                    perror("Błąd oczekiwania na zakończenie wątku kasjera");
+                } else {
+                    printf("Kasjer %d zakończył działanie z statusem: %ld\n", i + 1, (long)status);
+                }
+                
+            }
+        }
+        exit(0);
     }
-    if (shmdt(sklep) == -1) {
-        perror("Błąd odłączania segmentu pamięci dzielonej");
-        exit(1);
-    }
-    printf("Klient %d opuścił sklep\n", pid);
-    exit(1);
 }
-*/
+
 // Funkcja wykonywana przez wątek kasjera
 void *kasjer(void *arg) {
     srand(time(NULL));
     int index = (int)(long)arg;
     int kasjer_id = get_queue_id(index);
-    //pthread_t pid = pthread_self();
     printf("\t\tAktywny kasjer: %d o id: %d \n", index + 1, kasjer_id);
     Komunikat msg;
     while (!check_fire_flag(sklep)) {
         if (msgrcv(kasjer_id, &msg, sizeof(msg) - sizeof(long), kasjer_id, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
-                // Sprawdzenie, czy kasjer jest nadal aktywny
-                if (semaphore_p(semID, 2) == -1) {
-                    perror("Błąd semaphore_p w kasjer");
-                    pthread_exit(NULL);
-                }
-                
-                int flaga = aktywne_kasy[index];
-                
-                if (semaphore_v(semID, 2) == -1) {
-                    perror("Błąd semaphore_p w kasjer");
-                    pthread_exit(NULL);
-                }
 
+                int flaga = get_active_cashier(index);
+                
                 if (flaga == 0) {
-                    // Sprawdzenie, czy kolejka komunikatów jest pusta
                     struct msqid_ds buf;
                     if (msgctl(kasjer_id, IPC_STAT, &buf) == -1) {
                         perror("Błąd pobierania stanu kolejki");
-                        pthread_exit(NULL);
+                        pthread_exit(0);
                     }
 
                     if (buf.msg_qnum == 0) {
-                        // Kolejka jest pusta, kasjer może zakończyć działanie
-                        printf("\tKasjer %d o ID: %d kończy pracę ponieważ kolejka jest pusta.\n", index, kasjer_id);
-                        pthread_exit(NULL);
+                        printf("\tKasjer %d o ID: %d kończy pracę ponieważ kolejka jest pusta.\n", index + 1, kasjer_id);
+                        pthread_exit(0);
                     }
                 }
-
                 sleep(3);
                 continue;
             } else if (errno == EINTR) {
-                printf("EINTR");
                 continue;
             }
         }
@@ -88,7 +80,7 @@ void *kasjer(void *arg) {
             break;
         }
     }
-    pthread_exit(NULL);
+    pthread_exit(0);
 }
 
 // Funkcja monitorująca stan kas
@@ -97,29 +89,30 @@ void aktualizuj_kasy() {
         perror("Błąd semaphore_p w aktualizuj_kasy");
         return;
     }
+    
+    int active_cashier;
 
-    //printf("sprawdzanie liczby kas....\n");
     if (sklep->liczba_klientow / K >= sklep->liczba_kas && sklep->liczba_kas < MAX_KASY) {
         sklep->liczba_kas++;
-        if (!aktywne_kasy[sklep->liczba_kas - 1]) { //dla flag=1
+        active_cashier = get_active_cashier(sklep->liczba_kas - 1); // pobranie flagi kasjera
+        if (!active_cashier) { //dla flag = 0
             pthread_create(&kasjerzy[sklep->liczba_kas - 1], NULL, kasjer, (void *)(long)(sklep->liczba_kas - 1));
-            aktywne_kasy[sklep->liczba_kas - 1] = 1;
+            set_active_cashier(sklep->liczba_kas - 1); // ustawienie flagi
         }
     } else if (sklep->liczba_klientow < K * (sklep->liczba_kas - 1) && sklep->liczba_kas > 2) {
         sklep->liczba_kas--;
-        if (aktywne_kasy[sklep->liczba_kas]) {
-            //pthread_join(kasjerzy[sklep->liczba_kas], NULL);
-            aktywne_kasy[sklep->liczba_kas] = 0;
+        active_cashier = get_active_cashier(sklep->liczba_kas); // pobranie flagi kasjera
+        if (active_cashier) {
+            set_inactive_cashier(sklep->liczba_kas);
+            printf("\tWysyłanie sygnału zamknięcia do kasy %d\n", sklep->liczba_kas + 1);
         }
     }
     printf("Aktualna liczba kas: %d\n", sklep->liczba_kas);
 
-    if (semaphore_v(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+    if (semaphore_v(semID, 0) == -1) {
         perror("Błąd semaphore_v w aktualizuj_kasy");
         return;
     }
-
-    //printf("koniec sprawdzania liczby kas....\n");
 }
 
 int main() {
@@ -135,17 +128,13 @@ int main() {
         shmdt(sklep);
         exit(1);
     }
-    /*
+    
     // Rejestracja obsługi sygnału SIGINT
-    if (signal(SIGINT, cashier_signal_handler) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału");
-        if (shmdt(sklep) == -1) {
-            perror("Błąd odłączania segmentu pamięci dzielonej");
-            exit(1);
-        }
+    if (signal(SIGINT, kierownik_signal_handler) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału SIGINT");
         exit(1);
     }
-    */
+    
     // Tworzenie 2 początkowych kas
     for (int i = 0; i < 2; i++) {
         if (pthread_create(&kasjerzy[i], NULL, kasjer, (void *)(long)i) != 0) {
@@ -162,13 +151,13 @@ int main() {
     // Pętla monitorująca stan kas
     while (!check_fire_flag(sklep)) {
         aktualizuj_kasy();
-        sleep(2); 
+        sleep(4); 
     }
 
     // Zakończenie programu ()
     for (int i = 0; i < MAX_KASY; i++) {
-        if (aktywne_kasy[i] != 0 )  {
-            if (pthread_join(aktywne_kasy[i], NULL) != 0) {
+        if (aktywne_kasy[i] == 1)  {
+            if (pthread_join(aktywne_kasy[i], NULL) == -1) {
                 perror("Błąd oczekiwania na zakończenie wątku kasjera");
             } else {
                 printf("zakończono wątek kasjera: %d", aktywne_kasy[i]);

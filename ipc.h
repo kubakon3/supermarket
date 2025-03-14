@@ -39,10 +39,16 @@ typedef struct {
     pid_t klient_id;
 } Komunikat;
 
+// Funkcje do zarządzania pamięcią dzieloną
 Sklep *get_shared_memory();
 void destroy_shared_memory(Sklep *sklep);
+
+// Funkcje do zarządzania danymi w pamięci dzielonej
 int get_queue_id(int index);
 int get_cashiers();
+int get_active_cashier(int index);
+void set_active_cashier(int index);
+void set_inactive_cashier(int index);
 
 // Funkcje do zarządzania semaforami
 int create_semaphore();

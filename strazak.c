@@ -11,13 +11,12 @@ void sigusr_handler(int sig) {
         }
 
         printf("Strażak: Sygnał SIGINT wysłany. Kończenie pracy wątku strażaka.\n");
-        pthread_exit(NULL); // Zakończenie wątku strażaka
+        pthread_exit(NULL);
     }
 }
 
 // Funkcja wykonywana przez wątek strażaka
 void *strazak(void *arg) {
-    // Rejestracja obsługi sygnału SIGINT
     if (signal(SIGUSR1, sigusr_handler) == SIG_ERR) {
         perror("Błąd rejestracji obsługi sygnału SIGUSR1");
         pthread_exit(NULL);
@@ -25,9 +24,8 @@ void *strazak(void *arg) {
 
     printf("Strażak: Wątek strażaka uruchomiony. Oczekiwanie na sygnał SIGINT (Ctrl+C)...\n");
 
-    // Nieskończona pętla oczekująca na sygnał
     while (1) {
-        pause(); // Oczekiwanie na sygnał
+        pause();
     }
 
     pthread_exit(NULL);

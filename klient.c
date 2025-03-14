@@ -46,7 +46,7 @@ void decrement_customers() {
 
 // Funkcja do usuwania PID-u klienta z tablicy w pamięci dzielonej
 void remove_pid() {
-    if (semaphore_p(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+    if (semaphore_p(semID, 0) == -1) { 
         perror("Błąd semaphore_p w remove_pid");
         shmdt(sklep);
         exit(1);
@@ -57,7 +57,7 @@ void remove_pid() {
             break;
         }
     }
-    if (semaphore_v(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+    if (semaphore_v(semID, 0) == -1) { 
         perror("Błąd semaphore_v w remove_pid");
         shmdt(sklep);
         exit(1);
@@ -79,7 +79,6 @@ void customer_signal_handler() {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);
     }
-    //printf("Klient %d opuścił sklep\n", pid);
     exit(0);
 }
 
@@ -110,10 +109,11 @@ int main() {
     }
 
     // Symulacja klienta
+    increment_customers();
     pid = getpid();
-    //int czas = rand() % 3 + 1;
-    printf("Klient %d wchodzi do sklepu\n", pid);
-    increment_customers(); // Zwiększenie liczby klientów
+    int czas = rand() % 3 + 1;
+    printf("Klient %d wchodzi do sklepu i robi zakupy przez %d sekund\n", pid, czas);
+    sleep(czas);
 
     // Wybór kasy z najkrótszą kolejką
     int cashier_msg_id = -1; // index id kolejki komunikatów
@@ -122,10 +122,11 @@ int main() {
 
     for (int i = 0; i < sklep->liczba_kas; i++) {
         struct msqid_ds buf;
-        if (msgctl(sklep->kolejki_kas[i], IPC_STAT, &buf) == -1) {
+        int id = get_queue_id(i);
+        if (msgctl(id, IPC_STAT, &buf) == -1) {
             perror("Błąd pobierania statystyk kolejki komunikatów");
             shmdt(sklep);
-            if (semaphore_v(semID, 1) == -1) { // Semafor 1 (liczba klientów)
+            if (semaphore_v(semID, 1) == -1) {
                 perror("Błąd zwiększania semafora klientów");
                 exit(1);
             }
@@ -143,31 +144,28 @@ int main() {
     Komunikat msg;
     msg.mtype = sklep->kolejki_kas[cashier_msg_id];
     msg.klient_id = pid;
-    
-    //printf("Klient %d: Próba wysłania komunikatu do kolejki %d (ID: %lu)\n", pid, cashier_id, msg.mtype);
 
-    if (msgsnd(sklep->kolejki_kas[cashier_msg_id], &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+    printf("Klient %d ustawił się w kolejce %d o ID:  %d\n", pid, cashier_id, sklep->kolejki_kas[cashier_msg_id]);
+    if (msgsnd(msg.mtype, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
         perror("Błąd wysyłania komunikatu klienta");
         shmdt(sklep);
-        if (semaphore_v(semID, 1) == -1) { // Semafor 1 (liczba klientów)
+        if (semaphore_v(semID, 1) == -1) {
             perror("Błąd zwiększania semafora klientów");
             exit(1);
         }
         exit(1);
     }
 
-    printf("Klient %d ustawił się w kolejce %d o ID:  %d\n", pid, cashier_id, sklep->kolejki_kas[cashier_msg_id]);
-
     // Oczekiwanie na odpowiedź od kasjera
     while (1) {
-        if (msgrcv(sklep->kolejki_kas[cashier_msg_id], &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
+        if (msgrcv(msg.mtype, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
                 sleep(3);
                 continue;
             } else {
                 perror("Błąd odbierania komunikatu od kasjera");
                 shmdt(sklep);
-                if (semaphore_v(semID, 1) == -1) { // Semafor 1 (liczba klientów)
+                if (semaphore_v(semID, 1) == -1) {
                     perror("Błąd zwiększania semafora klientów");
                 }
                 exit(1);
@@ -178,11 +176,9 @@ int main() {
     }
 
     printf("  Klient %d został obsłużony i wychodzi ze sklepu\n", pid);
-    decrement_customers(); // Zmniejszenie liczby klientów
-    //printf("Liczba klientów: %d\n", sklep->liczba_klientow);
+    decrement_customers();
 
-    // Zwiększenie wartości semafora o 1 (zwolnienie miejsca dla nowego klienta)
-    if (semaphore_v(semID, 1) == -1) { // Semafor 1 (liczba klientów)
+    if (semaphore_v(semID, 1) == -1) {
         perror("Błąd zwiększania semafora klientów");
         shmdt(sklep);
         exit(1);
@@ -190,7 +186,6 @@ int main() {
     
     remove_pid();
 
-    // Odłączenie pamięci dzielonej
     if (shmdt(sklep) == -1) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);

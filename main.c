@@ -15,28 +15,30 @@
 #include "strazak.h"
 
 extern Sklep *sklep;
-extern int semID; // ID semafora
+extern int semID;
 pid_t pid_kierownik;
 pthread_t tid_strazak;
 
 
-
+// Funkcja czekająca na Ctrl+C
 void signal_handler(int sig) {
-    if (semaphore_p(semID, 0) == -1) { 
-        perror("Błąd semaphore_p w sygnale w main");
-        return;
-    }
+    if (sig == SIGINT) {
+        if (semaphore_p(semID, 0) == -1) { 
+            perror("Błąd semaphore_p w sygnale w main");
+            return;
+        }
     
-    sklep->fire_flag = 1;
+        sklep->fire_flag = 1;
     
-    if (semaphore_v(semID, 0) == -1) { 
-        perror("Błąd semaphore_v w sygnale w main");
-        return;
-    }
+        if (semaphore_v(semID, 0) == -1) { 
+            perror("Błąd semaphore_v w sygnale w main");
+            return;
+        }
     
-    if (pthread_kill(tid_strazak, SIGUSR1) != 0) {
-        perror("Błąd wysłania SIGUSR1 do strażaka");
-        exit(1);
+        if (pthread_kill(tid_strazak, SIGUSR1) != 0) {
+            perror("Błąd wysłania SIGUSR1 do strażaka");
+            exit(1);
+        }
     }
 }
 
@@ -157,11 +159,12 @@ int main() {
     }
     
     sleep(1);
+    //for(int i = 0; i < 20; i++)
     //while (!check_fire_flag(sklep))
     // Tworzenie procesów klientów 
-    for(int i = 0; i < 20; i++) {
-        // Sprawdzanie ilości miejsc w sklepie
-        if (semaphore_p(semID, 1) == -1) { // Semafor 1 (liczba klientów)
+    while (!check_fire_flag(sklep)) {
+        // Semafor pilnujący ilości miejsc w sklepie
+        if (semaphore_p(semID, 1) == -1) {
             printf("Sklep jest pełen");
             sleep(4);
             continue;
@@ -211,14 +214,14 @@ int main() {
         printf("zakończono proces kierownika kasjerów\n");
     }
     
-    // Zakończenie wątku strażaka ()
+    // Czekanie na akończenie wątku strażaka
     if (pthread_join(tid_strazak, NULL) != 0) {
         perror("Błąd oczekiwania na zakończenie wątku strażaka");
     } else {
         printf("zakończono wątek strażaka\n");
     }
 
-    // Czyszczenie mechanizmów komunikacji ()
+    // Czyszczenie mechanizmów komunikacji
     for (int i = 0; i < MAX_KASY; i++) {
         if (msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL) == -1) {
             perror("Błąd usuwania kolejki komunikatów");
