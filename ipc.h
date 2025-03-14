@@ -30,16 +30,19 @@ typedef struct {
     int liczba_kas;
     int kolejki_kas[MAX_KASY]; // id kolejek komunikatów
     int fire_flag;
+    pid_t klienci_pidy[MAX_KLIENTOW]; // Tablica PID-ów klientów
 } Sklep;
 
 // Struktura komunikatu
 typedef struct {
     long mtype;
-    int klient_id;
+    pid_t klient_id;
 } Komunikat;
 
 Sklep *get_shared_memory();
 void destroy_shared_memory(Sklep *sklep);
+int get_queue_id(int index);
+int get_cashiers();
 
 // Funkcje do zarządzania semaforami
 int create_semaphore();

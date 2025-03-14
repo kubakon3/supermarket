@@ -4,6 +4,7 @@
 //int shm_id;
 Sklep *sklep;
 int semID;
+int aktywne_kasy[MAX_KASY] = {0};
 
 // Funkcja do tworzenia/dołączania pamięci dzielonej
 Sklep *get_shared_memory() {
@@ -44,6 +45,38 @@ void destroy_shared_memory(Sklep *sklep) {
     }
 }
 
+int get_queue_id(int index) {
+    if (semaphore_p(semID, 0) == -1) { 
+        perror("Błąd semaphore_p w get_queue_id");
+        return -1;
+    }
+
+    int queue_id = sklep->kolejki_kas[index];
+
+    if (semaphore_v(semID, 0) == -1) { 
+        perror("Błąd semaphore_v w get_queue_id");
+        return -1;
+    }
+
+    return queue_id;
+}
+
+int get_cashiers() {
+    if (semaphore_p(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+        perror("Błąd semaphore_p w get_cashiers");
+        return -1;
+    }
+
+    int cashiers = sklep->liczba_kas;
+
+    if (semaphore_v(semID, 0) == -1) { // Semafor 0 (dostęp do pamięci dzielonej)
+        perror("Błąd semaphore_v w get_cashiers");
+        return -1;
+    }
+
+    return cashiers;
+}
+
 int check_fire_flag(Sklep *sklep) {
     int semID = create_semaphore();
     
@@ -64,7 +97,7 @@ int check_fire_flag(Sklep *sklep) {
   
 
 int create_semaphore() {
-    int semID = semget(SEM_KEY, 2, IPC_CREAT | 0600);
+    int semID = semget(SEM_KEY, 3, IPC_CREAT | 0600);
     if (semID == -1) {
         perror("Błąd tworzenia semafora");
         return -1;

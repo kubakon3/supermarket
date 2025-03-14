@@ -19,22 +19,62 @@ extern int semID; // ID semafora
 pid_t pid_kierownik;
 pthread_t tid_strazak;
 
+
+
 void signal_handler(int sig) {
-    if (semaphore_p(semID, 0) == -1) { // dostęp do pamięci dzielonej
-        perror("Błąd semaphore_p w sygnale");
+    if (semaphore_p(semID, 0) == -1) { 
+        perror("Błąd semaphore_p w sygnale w main");
         return;
     }
     
     sklep->fire_flag = 1;
     
-    if (semaphore_v(semID, 0) == -1) { // dostęp do pamięci dzielonej
-        perror("Błąd semaphore_v w sygnale");
+    if (semaphore_v(semID, 0) == -1) { 
+        perror("Błąd semaphore_v w sygnale w main");
         return;
     }
     
     if (pthread_kill(tid_strazak, SIGUSR1) != 0) {
         perror("Błąd wysłania SIGUSR1 do strażaka");
         exit(1);
+    }
+}
+
+// Funkcja czekająca na zakończenie wszystkich klientów
+void wait_for_clients(Sklep *sklep) {
+    while (1) {
+        if (semaphore_p(semID, 0) == -1) { 
+            perror("Błąd semaphore_p w wait_for_clients");
+            exit(1);
+        }
+
+        int wszyscy_zakonczyli = 1;
+        int status;
+
+        for (int i = 0; i < MAX_KLIENTOW; i++) {
+            if (sklep->klienci_pidy[i] > 0) {
+                pid_t pid = waitpid(sklep->klienci_pidy[i], &status, WNOHANG);
+                if (pid > 0) {
+                    printf("Proces kienta %d zakończył się ze statusem %d\n", pid, status);
+                    sklep->klienci_pidy[i] = 0;
+                } else if (pid == -1) {
+                    perror("Błąd waitpid w wait_for_clients");
+                } else {
+                    wszyscy_zakonczyli = 0;
+                }
+            }
+        }
+
+        if (semaphore_v(semID, 0) == -1) {
+            perror("Błąd semaphore_v w wait_for_clients");
+            exit(1);
+        }
+
+        if (wszyscy_zakonczyli) {
+            break;
+        }
+
+        sleep(1);
     }
 }
 
@@ -59,6 +99,7 @@ int main() {
     // Ustawienie wartości semaforów
     set_semaphore(semID, 0, 1); // Semafor 0 (dostęp do pamięci dzielonej)
     set_semaphore(semID, 1, MAX_KLIENTOW); // Semafor 1 (liczba klientów)
+    set_semaphore(semID, 2, 1); // Semafor 2 (dostęp do aktywne_kasy)
 
     // Inicjalizacja kolejek komunikatów dla kas
     for (int i = 0; i < MAX_KASY; i++) {
@@ -72,11 +113,24 @@ int main() {
             destroy_shared_memory(sklep);
             exit(1);
         }
+        printf("Utworzono kolejkę komunikatów %d: ID = %d\n", i+1, sklep->kolejki_kas[i]);
     }
 
     // Rejestracja obsługi sygnału SIGINT
     if (signal(SIGINT, signal_handler) == SIG_ERR) {
         perror("Błąd rejestracji obsługi sygnału");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
+    // Tworzenie wątku strażaka
+    if (pthread_create(&tid_strazak, NULL, (void*)strazak, NULL) != 0) {
+        perror("Błąd tworzenia wątku strażaka");
+        kill(pid_kierownik, SIGTERM);
         for (int i = 0; i < MAX_KASY; i++) {
             msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
         }
@@ -101,21 +155,11 @@ int main() {
             exit(1);
         }
     }
-
-    // Tworzenie wątku strażaka
-    if (pthread_create(&tid_strazak, NULL, (void*)strazak, NULL) != 0) {
-        perror("Błąd tworzenia wątku strażaka");
-        kill(pid_kierownik, SIGTERM);
-        for (int i = 0; i < MAX_KASY; i++) {
-            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
-        }
-        remove_semaphore(semID);
-        destroy_shared_memory(sklep);
-        exit(1);
-    }
-
+    
+    sleep(1);
+    //while (!check_fire_flag(sklep))
     // Tworzenie procesów klientów 
-    while (!check_fire_flag(sklep)) {
+    for(int i = 0; i < 20; i++) {
         // Sprawdzanie ilości miejsc w sklepie
         if (semaphore_p(semID, 1) == -1) { // Semafor 1 (liczba klientów)
             printf("Sklep jest pełen");
@@ -152,18 +196,26 @@ int main() {
         }
         sleep(1);
     }
-
+    
+    sleep(3);
+    
+    // Czekanie na zakończenie wszystkich klientów
+    wait_for_clients(sklep);
+    
+    sleep(2);
+    
+    // Czekanie na zakończenie kierownika
+    if (waitpid(pid_kierownik, NULL, 0) == -1) {
+        perror("Błąd oczekiwania na zakończenie procesu kierownika kasjerów");
+    } else {
+        printf("zakończono proces kierownika kasjerów\n");
+    }
+    
     // Zakończenie wątku strażaka ()
     if (pthread_join(tid_strazak, NULL) != 0) {
         perror("Błąd oczekiwania na zakończenie wątku strażaka");
     } else {
         printf("zakończono wątek strażaka\n");
-    }
-
-    if (waitpid(pid_kierownik, NULL, 0) == -1) {
-        perror("Błąd oczekiwania na zakończenie procesu kierownika kasjerów");
-    } else {
-        printf("zakończono proces kierownika kasjerów\n");
     }
 
     // Czyszczenie mechanizmów komunikacji ()

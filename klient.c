@@ -16,6 +16,7 @@
 extern Sklep *sklep;
 extern int semID; // ID semafora
 int pid;
+extern int aktywne_kasy[MAX_KASY];
 
 // Funkcja do zwiększania liczby klientów
 void increment_customers() {
@@ -63,7 +64,7 @@ void remove_pid() {
     }
 }
 
-void customer_signal_handler(int sig) {
+void customer_signal_handler() {
     
     decrement_customers();
     
@@ -78,7 +79,7 @@ void customer_signal_handler(int sig) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);
     }
-    printf("Klient %d opuścił sklep\n", pid);
+    //printf("Klient %d opuścił sklep\n", pid);
     exit(0);
 }
 
@@ -109,12 +110,13 @@ int main() {
     }
 
     // Symulacja klienta
-    int czas = rand() % 3 + 1;
-    increment_customers(); // Zwiększenie liczby klientów
     pid = getpid();
+    //int czas = rand() % 3 + 1;
+    printf("Klient %d wchodzi do sklepu\n", pid);
+    increment_customers(); // Zwiększenie liczby klientów
 
     // Wybór kasy z najkrótszą kolejką
-    int cashier_msg_id = -1; // indeks kasjera
+    int cashier_msg_id = -1; // index id kolejki komunikatów
     int cashier_id = 0; // numer kasjera 1 do 10
     int min_message_count = INT_MAX;
 
@@ -141,6 +143,8 @@ int main() {
     Komunikat msg;
     msg.mtype = sklep->kolejki_kas[cashier_msg_id];
     msg.klient_id = pid;
+    
+    //printf("Klient %d: Próba wysłania komunikatu do kolejki %d (ID: %lu)\n", pid, cashier_id, msg.mtype);
 
     if (msgsnd(sklep->kolejki_kas[cashier_msg_id], &msg, sizeof(msg) - sizeof(long), 0) == -1) {
         perror("Błąd wysyłania komunikatu klienta");
@@ -152,7 +156,7 @@ int main() {
         exit(1);
     }
 
-    printf("Klient %d ustawił się w kolejce %d do kasjera %d\n", pid, cashier_id, sklep->kolejki_kas[cashier_msg_id]);
+    printf("Klient %d ustawił się w kolejce %d o ID:  %d\n", pid, cashier_id, sklep->kolejki_kas[cashier_msg_id]);
 
     // Oczekiwanie na odpowiedź od kasjera
     while (1) {
@@ -173,9 +177,9 @@ int main() {
         }
     }
 
-    printf("Klient %d został obsłużony i wychodzi ze sklepu\n", pid);
+    printf("  Klient %d został obsłużony i wychodzi ze sklepu\n", pid);
     decrement_customers(); // Zmniejszenie liczby klientów
-    printf("Liczba klientów: %d\n", sklep->liczba_klientow);
+    //printf("Liczba klientów: %d\n", sklep->liczba_klientow);
 
     // Zwiększenie wartości semafora o 1 (zwolnienie miejsca dla nowego klienta)
     if (semaphore_v(semID, 1) == -1) { // Semafor 1 (liczba klientów)
