@@ -29,6 +29,11 @@ void increment_customers() {
         perror("Błąd semaphore_v w increment_customers");
         exit(1);
     }
+    
+    // Semafor dla funkcji aktualizującej kasy
+    if (semaphore_v(semID, 4) == -1) {
+        perror("Błąd semaphore_v(4) w increment_customers");
+    }
 }
 
 // Funkcja do zmniejszania liczby klientów
@@ -41,6 +46,11 @@ void decrement_customers() {
     if (semaphore_v(semID, 0) == -1) { 
         perror("Błąd semaphore_v w decrement_customers");
         exit(1);
+    }
+    
+    // Semafor dla funkcji aktualizującej kasy
+    if (semaphore_v(semID, 4) == -1) {
+        perror("Błąd semaphore_v(4) w decrement_customers");
     }
 }
 
@@ -160,7 +170,7 @@ int main() {
     while (1) {
         if (msgrcv(msg.mtype, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
-                sleep(3);
+                usleep(10000);
                 continue;
             } else {
                 perror("Błąd odbierania komunikatu od kasjera");

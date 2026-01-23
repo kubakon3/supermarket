@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -19,6 +20,15 @@ extern int semID;
 pid_t pid_kierownik;
 pthread_t tid_strazak;
 
+
+// Funkcja do zbierania zakończonych procesów potomnych przy braku sleep
+void sigchld_handler(int sig) {
+    (void)sig;
+    int saved_errno = errno;
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+    }
+    errno = saved_errno;
+}
 
 // Funkcja czekająca na Ctrl+C
 void signal_handler(int sig) {
@@ -102,6 +112,8 @@ int main() {
     set_semaphore(semID, 0, 1); // Semafor 0 (dostęp do pamięci dzielonej)
     set_semaphore(semID, 1, MAX_KLIENTOW); // Semafor 1 (liczba klientów)
     set_semaphore(semID, 2, 1); // Semafor 2 (dostęp do aktywne_kasy)
+    set_semaphore(semID, 3, 1); // Semafor 3 (synchronizacja tworzenia procesów)
+    set_semaphore(semID, 4, 0); // Semafor 4 (event counter dla kierownika)
 
     // Inicjalizacja kolejek komunikatów dla kas
     for (int i = 0; i < MAX_KASY; i++) {
@@ -118,6 +130,21 @@ int main() {
         printf("Utworzono kolejkę komunikatów %d: ID = %d\n", i+1, sklep->kolejki_kas[i]);
     }
 
+    // Rejestracja obsługi sygnału SIGCHLD - zbieranie zombie
+    struct sigaction sa_chld;
+    sa_chld.sa_handler = sigchld_handler;
+    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    sigemptyset(&sa_chld.sa_mask);
+    if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
+        perror("Błąd rejestracji obsługi sygnału SIGCHLD");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
     // Rejestracja obsługi sygnału SIGINT
     if (signal(SIGINT, signal_handler) == SIG_ERR) {
         perror("Błąd rejestracji obsługi sygnału");
@@ -129,10 +156,43 @@ int main() {
         exit(1);
     }
     
+    // Synchronizacja przed tworzeniem procesów
+    if (semaphore_p(semID, 3) == -1) {
+        perror("Błąd semaphore_p przed tworzeniem strażaka");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
     // Tworzenie wątku strażaka
     if (pthread_create(&tid_strazak, NULL, (void*)strazak, NULL) != 0) {
         perror("Błąd tworzenia wątku strażaka");
+        semaphore_v(semID, 3);
         kill(pid_kierownik, SIGTERM);
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
+    if (semaphore_v(semID, 3) == -1) {
+        perror("Błąd semaphore_v po utworzeniu strażaka");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
+    // Synchronizacja przed tworzeniem kierownika
+    if (semaphore_p(semID, 3) == -1) {
+        perror("Błąd semaphore_p przed tworzeniem kierownika");
         for (int i = 0; i < MAX_KASY; i++) {
             msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
         }
@@ -158,11 +218,22 @@ int main() {
         }
     }
     
+    if (semaphore_v(semID, 3) == -1) {
+        perror("Błąd semaphore_v po utworzeniu kierownika");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
     sleep(1);
     //for(int i = 0; i < 20; i++)
     //while (!check_fire_flag(sklep))
     // Tworzenie procesów klientów 
     while (!check_fire_flag(sklep)) {
+        
         // Semafor pilnujący ilości miejsc w sklepie
         if (semaphore_p(semID, 1) == -1) {
             printf("Sklep jest pełen");

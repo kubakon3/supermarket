@@ -34,7 +34,7 @@ void destroy_shared_memory(Sklep *sklep) {
             if (shmctl(shm_id, IPC_RMID, NULL) == -1) {
                 perror("Błąd usuwania pamięci dzielonej");
             } else {
-                ("Pamięć dzielona została poprawnie usunięta\n");
+                printf("Pamięć dzielona została poprawnie usunięta\n");
             }
         }
     }
@@ -112,9 +112,7 @@ void set_inactive_cashier(int index) {
     }
 }
 
-int check_fire_flag(Sklep *sklep) {
-    int semID = create_semaphore();
-    
+int check_fire_flag(Sklep *sklep) {    
     if (semaphore_p(semID, 0) == -1) {
         perror("Błąd semaphore_p w sygnale");
         return -1;
@@ -132,7 +130,7 @@ int check_fire_flag(Sklep *sklep) {
   
 
 int create_semaphore() {
-    int semID = semget(SEM_KEY, 3, IPC_CREAT | 0600);
+    int semID = semget(SEM_KEY, 6, IPC_CREAT | 0600);
     if (semID == -1) {
         perror("Błąd tworzenia semafora");
         return -1;
@@ -150,6 +148,10 @@ void set_semaphore(int semID, int number, int value) {
 int semaphore_p(int semID, int number) {
     struct sembuf bufor_sem = {number, -1, 0};
     if (semop(semID, &bufor_sem, 1) == -1) {
+        // if (errno == EINTR) {
+        //     // Przerwane przez sygnał (np. SIGCHLD) - ponów próbę
+        //     continue;
+        // }
         perror("error semop P");
         return -1;
     }
@@ -159,6 +161,10 @@ int semaphore_p(int semID, int number) {
 int semaphore_v(int semID, int number) {
     struct sembuf bufor_sem = {number, 1, 0};
     if (semop(semID, &bufor_sem, 1) == -1) {
+        // if (errno == EINTR) {
+        //     // Przerwane przez sygnał (np. SIGCHLD) - ponów próbę
+        //     continue;
+        // }
         perror("error semop V");
         return -1;
     }

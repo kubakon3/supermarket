@@ -65,7 +65,7 @@ void *kasjer(void *arg) {
                         pthread_exit(0);
                     }
                 }
-                sleep(3);
+                usleep(10000);
                 continue;
             } else if (errno == EINTR) {
                 continue;
@@ -150,6 +150,11 @@ int main() {
     sleep(1);
     // Pętla monitorująca stan kas
     while (!check_fire_flag(sklep)) {
+        if (semaphore_p(semID, 4) == -1) {
+            perror("Błąd semaphore_p(4) w kierowniku");
+            break;
+        }
+        
         aktualizuj_kasy();
         sleep(4); 
     }
@@ -157,10 +162,10 @@ int main() {
     // Zakończenie programu ()
     for (int i = 0; i < MAX_KASY; i++) {
         if (aktywne_kasy[i] == 1)  {
-            if (pthread_join(aktywne_kasy[i], NULL) == -1) {
+            if (pthread_join(kasjerzy[i], NULL) != 0) {
                 perror("Błąd oczekiwania na zakończenie wątku kasjera");
             } else {
-                printf("zakończono wątek kasjera: %d", aktywne_kasy[i]);
+                printf("zakończono wątek kasjera: %d\n", aktywne_kasy[i]);
             }
         }
     }
