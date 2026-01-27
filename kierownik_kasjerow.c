@@ -21,27 +21,40 @@ extern int aktywne_kasy[MAX_KASY];
 
 // Funkcja obsługi sygnału SIGINT w kierowniku kasjerów
 void kierownik_signal_handler(int sig) {
-    if (sig == SIGINT) {
-        printf("Kierownik kasjerów otrzymał sygnał SIGINT. Kończenie pracy...\n");
+    if (sig == SIGUSR2) {
+        printf("Kierownik kasjerów otrzymał sygnał SIGUSR2. Kończenie pracy...\n");
 
+        // Wysłanie sygnału SIGTERM do wszystkich aktywnych kasjerów
         for (int i = 0; i < MAX_KASY; i++) {
             int flag = get_active_cashier(i);
             if (flag == 1) {
-                void *status;
-                if (pthread_join(kasjerzy[i], &status) == -1) {
-                    perror("Błąd oczekiwania na zakończenie wątku kasjera");
+                if (pthread_kill(kasjerzy[i], SIGTERM) != 0) {
+                    perror("Błąd wysyłania SIGTERM do kasjera");
                 } else {
-                    printf("Kasjer %d zakończył działanie z statusem: %ld\n", i + 1, (long)status);
+                    printf("Wysłano sygnał SIGTERM do kasjera %d\n", i + 1);
                 }
-                
             }
         }
-        exit(0);
+
+    }
+}
+
+// Handler sygnału SIGTERM dla kasjera - kończy wątek
+void handle_cashier_signal_fire(int sig) {
+    if (sig == SIGTERM) {
+        printf("\tKasjer otrzymał sygnał SIGTERM - kończenie pracy\n");
+        pthread_exit(0);
     }
 }
 
 // Funkcja wykonywana przez wątek kasjera
 void *kasjer(void *arg) {
+    // Rejestracja obsługi sygnału SIGTERM
+    if (signal(SIGTERM, handle_cashier_signal_fire) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału SIGTERM w kasjerze");
+        pthread_exit(NULL);
+    }
+    
     srand(time(NULL));
     int index = (int)(long)arg;
     int kasjer_id = get_queue_id(index);
@@ -70,6 +83,8 @@ void *kasjer(void *arg) {
             } else if (errno == EINTR) {
                 continue;
             }
+            perror("Błąd odbierania komunikatu przez kasjera");
+            pthread_exit(NULL);
         }
         int czas = rand() % 8 + 3;
         printf("\tKasjer %d obsługuje klienta %d przez %d sekund\n", index + 1, msg.klient_id, czas);
@@ -116,6 +131,7 @@ void aktualizuj_kasy() {
 }
 
 int main() {
+    signal(SIGINT, SIG_IGN);
     // Dołączenie pamięci dzielonej
     sklep = get_shared_memory();
     if (sklep == NULL) {
@@ -129,9 +145,9 @@ int main() {
         exit(1);
     }
     
-    // Rejestracja obsługi sygnału SIGINT
-    if (signal(SIGINT, kierownik_signal_handler) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału SIGINT");
+    // Rejestracja obsługi sygnału SIGUSR2
+    if (signal(SIGUSR2, kierownik_signal_handler) == SIG_ERR) {
+        perror("Błąd rejestracji obsługi sygnału SIGUSR2");
         exit(1);
     }
     
@@ -154,7 +170,7 @@ int main() {
             perror("Błąd semaphore_p(4) w kierowniku");
             break;
         }
-        
+
         aktualizuj_kasy();
         sleep(4); 
     }
@@ -162,7 +178,7 @@ int main() {
     // Zakończenie programu ()
     for (int i = 0; i < MAX_KASY; i++) {
         if (aktywne_kasy[i] == 1)  {
-            if (pthread_join(kasjerzy[i], NULL) != 0) {
+            if (pthread_join(aktywne_kasy[i], NULL) != 0) {
                 perror("Błąd oczekiwania na zakończenie wątku kasjera");
             } else {
                 printf("zakończono wątek kasjera: %d\n", aktywne_kasy[i]);

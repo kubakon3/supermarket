@@ -54,28 +54,7 @@ void decrement_customers() {
     }
 }
 
-// Funkcja do usuwania PID-u klienta z tablicy w pamięci dzielonej
-void remove_pid() {
-    if (semaphore_p(semID, 0) == -1) { 
-        perror("Błąd semaphore_p w remove_pid");
-        shmdt(sklep);
-        exit(1);
-    }
-    for (int i = 0; i < MAX_KLIENTOW; i++) {
-        if (sklep->klienci_pidy[i] == pid) {
-            sklep->klienci_pidy[i] = 0;
-            break;
-        }
-    }
-    if (semaphore_v(semID, 0) == -1) { 
-        perror("Błąd semaphore_v w remove_pid");
-        shmdt(sklep);
-        exit(1);
-    }
-}
-
 void customer_signal_handler() {
-    
     decrement_customers();
     
     //ilość klientów w sklepie
@@ -94,7 +73,7 @@ void customer_signal_handler() {
 
 int main() {
     srand(time(NULL));
-
+    signal(SIGINT, SIG_IGN);
     // Dołączenie pamięci dzielonej
     sklep = get_shared_memory();
     if (sklep == NULL) {
@@ -108,8 +87,8 @@ int main() {
         exit(1);
     }
     
-    // Rejestracja obsługi sygnału SIGINT
-    if (signal(SIGINT, customer_signal_handler) == SIG_ERR) {
+    // Rejestracja obsługi sygnału SIGUSR2
+    if (signal(SIGUSR2, customer_signal_handler) == SIG_ERR) {
         perror("Błąd rejestracji obsługi sygnału");
         if (shmdt(sklep) == -1) {
             perror("Błąd odłączania segmentu pamięci dzielonej");
@@ -121,7 +100,7 @@ int main() {
     // Symulacja klienta
     increment_customers();
     pid = getpid();
-    int czas = rand() % 3 + 1;
+    int czas = rand() % 3;
     printf("Klient %d wchodzi do sklepu i robi zakupy przez %d sekund\n", pid, czas);
     sleep(czas);
 
@@ -194,8 +173,6 @@ int main() {
         exit(1);
     }
     
-    remove_pid();
-
     if (shmdt(sklep) == -1) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);

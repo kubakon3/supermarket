@@ -1,16 +1,16 @@
 #include "strazak.h"
 
-// Funkcja do obsługi sygnału SIGINT
+// Funkcja do obsługi sygnału SIGUSR1
 void sigusr_handler(int sig) {
     if (sig == SIGUSR1) {
-        printf("Strażak: Otrzymano sygnał SIGUSR1. Wysyłanie sygnału SIGINT do wszystkich procesów potomnych...\n");
+        printf("Strażak: Otrzymano sygnał SIGUSR1. Wysyłanie sygnału SIGUSR2 do wszystkich procesów potomnych...\n");
 
-        // Wysyłanie sygnału SIGINT do wszystkich procesów potomnych w grupie
-        if (kill(0, SIGINT) == -1) {
-            perror("Błąd wysyłania sygnału SIGINT do procesów potomnych");
+        // Wysyłanie sygnału SIGUSR2 do wszystkich procesów potomnych w grupie
+        if (kill(0, SIGUSR2) == -1) {
+            perror("Błąd wysyłania sygnału SIGUSR2 do procesów potomnych");
         }
 
-        printf("Strażak: Sygnał SIGINT wysłany. Kończenie pracy wątku strażaka.\n");
+        printf("Strażak: Sygnał SIGUSR2 wysłany. Kończenie pracy wątku strażaka.\n");
         pthread_exit(NULL);
     }
 }

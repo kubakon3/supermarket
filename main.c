@@ -1,4 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -19,16 +18,8 @@ extern Sklep *sklep;
 extern int semID;
 pid_t pid_kierownik;
 pthread_t tid_strazak;
+pthread_t tid_zombie_cleanup;
 
-
-// Funkcja do zbierania zakończonych procesów potomnych przy braku sleep
-void sigchld_handler(int sig) {
-    (void)sig;
-    int saved_errno = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0) {
-    }
-    errno = saved_errno;
-}
 
 // Funkcja czekająca na Ctrl+C
 void signal_handler(int sig) {
@@ -52,9 +43,63 @@ void signal_handler(int sig) {
     }
 }
 
+// Wątek do zbierania procesów zombie klientów
+void *zombie_cleanup_thread(void *arg) {
+    (void)arg;
+    printf("Wątek do zbierania zombie uruchomiony\n");
+    pid_t pidy_kopia[MAX_KLIENTOW];
+    while (!check_fire_flag(sklep)) {
+        if (semaphore_p(semID, 0) == -1) { 
+            perror("Błąd semaphore_p w zombie_cleanup_thread");
+            break;
+        }
+        
+        for (int i = 0; i < MAX_KLIENTOW; i++) {
+            pidy_kopia[i] = sklep->klienci_pidy[i];
+        }
+        
+        if (semaphore_v(semID, 0) == -1) {
+            perror("Błąd semaphore_v w zombie_cleanup_thread");
+            break;
+        }
+
+        for (int i = 0; i < MAX_KLIENTOW; i++) {
+            if (pidy_kopia[i] > 0) {
+                int status;
+                pid_t result = waitpid(pidy_kopia[i], &status, WNOHANG);
+                
+                if (result > 0) {
+                    printf("Zombie cleanup: zebrany proces PID %d\n", result);
+                    
+                    if (semaphore_p(semID, 0) == -1) { 
+                        perror("Błąd semaphore_p przy usuwaniu PID");
+                        continue;
+                    }
+                    
+                    sklep->klienci_pidy[i] = 0;
+                    
+                    if (semaphore_v(semID, 0) == -1) {
+                        perror("Błąd semaphore_v przy usuwaniu PID");
+                    }
+                } else if (result == -1 && errno != ECHILD) {
+                    perror("Błąd waitpid w zombie_cleanup_thread");
+                }
+            }
+        }
+
+        usleep(10000);
+    }
+    
+    printf("Wątek zombie_cleanup kończy pracę\n");
+    pthread_exit(NULL);
+}
+
 // Funkcja czekająca na zakończenie wszystkich klientów
 void wait_for_clients(Sklep *sklep) {
-    while (1) {
+    // pid_t pidy_kopia[MAX_KLIENTOW];
+    // pid_t result;
+    // int status;
+    while (check_fire_flag(sklep)) {
         if (semaphore_p(semID, 0) == -1) { 
             perror("Błąd semaphore_p w wait_for_clients");
             exit(1);
@@ -91,6 +136,8 @@ void wait_for_clients(Sklep *sklep) {
 }
 
 int main() {
+    pid_t pid = getpid();
+    setpgid(pid,pid);
     // Inicjalizacja pamięci dzielonej
     sklep = get_shared_memory();
     if (sklep == NULL) {
@@ -129,21 +176,6 @@ int main() {
         }
         printf("Utworzono kolejkę komunikatów %d: ID = %d\n", i+1, sklep->kolejki_kas[i]);
     }
-
-    // Rejestracja obsługi sygnału SIGCHLD - zbieranie zombie
-    struct sigaction sa_chld;
-    sa_chld.sa_handler = sigchld_handler;
-    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-    sigemptyset(&sa_chld.sa_mask);
-    if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
-        perror("Błąd rejestracji obsługi sygnału SIGCHLD");
-        for (int i = 0; i < MAX_KASY; i++) {
-            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
-        }
-        remove_semaphore(semID);
-        destroy_shared_memory(sklep);
-        exit(1);
-    }
     
     // Rejestracja obsługi sygnału SIGINT
     if (signal(SIGINT, signal_handler) == SIG_ERR) {
@@ -155,6 +187,8 @@ int main() {
         destroy_shared_memory(sklep);
         exit(1);
     }
+
+    signal(SIGUSR2, SIG_IGN);
     
     // Synchronizacja przed tworzeniem procesów
     if (semaphore_p(semID, 3) == -1) {
@@ -228,6 +262,17 @@ int main() {
         exit(1);
     }
     
+    // Tworzenie wątku do zbierania zombie procesów
+    if (pthread_create(&tid_zombie_cleanup, NULL, zombie_cleanup_thread, NULL) != 0) {
+        perror("Błąd tworzenia wątku zombie_cleanup");
+        for (int i = 0; i < MAX_KASY; i++) {
+            msgctl(sklep->kolejki_kas[i], IPC_RMID, NULL);
+        }
+        remove_semaphore(semID);
+        destroy_shared_memory(sklep);
+        exit(1);
+    }
+    
     sleep(1);
     //for(int i = 0; i < 20; i++)
     //while (!check_fire_flag(sklep))
@@ -273,10 +318,17 @@ int main() {
     
     sleep(3);
     
+    // Czekanie na zakończenie wątku zombie_cleanup
+    if (pthread_join(tid_zombie_cleanup, NULL) != 0) {
+        perror("Błąd oczekiwania na zakończenie wątku zombie_cleanup");
+    } else {
+        printf("zakończono wątek zombie_cleanup\n");
+    }
+    
     // Czekanie na zakończenie wszystkich klientów
     wait_for_clients(sklep);
     
-    sleep(2);
+    sleep(1);
     
     // Czekanie na zakończenie kierownika
     if (waitpid(pid_kierownik, NULL, 0) == -1) {
