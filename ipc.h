@@ -30,7 +30,6 @@ typedef struct {
     int liczba_kas;
     int kolejki_kas[MAX_KASY]; // id kolejek komunikatów
     int fire_flag;
-    pid_t klienci_pidy[MAX_KLIENTOW]; // Tablica PID-ów klientów
 } Sklep;
 
 // Struktura komunikatu

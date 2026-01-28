@@ -55,14 +55,7 @@ void decrement_customers() {
 }
 
 void customer_signal_handler() {
-    decrement_customers();
-    
-    //ilość klientów w sklepie
-    if (semaphore_v(semID, 1) == -1) { 
-        perror("Błąd zwiększania semafora klientów");
-        shmdt(sklep);
-        exit(1);
-    }
+    printf("Klient otrzymał sygnał SIGUSR2. Kończenie pracy...\n");
     
     if (shmdt(sklep) == -1) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
@@ -102,7 +95,7 @@ int main() {
     pid = getpid();
     int czas = rand() % 3;
     printf("Klient %d wchodzi do sklepu i robi zakupy przez %d sekund\n", pid, czas);
-    sleep(czas);
+    // sleep(czas);
 
     // Wybór kasy z najkrótszą kolejką
     int cashier_msg_id = -1; // index id kolejki komunikatów
@@ -149,7 +142,7 @@ int main() {
     while (1) {
         if (msgrcv(msg.mtype, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
-                usleep(10000);
+                // usleep(10000);
                 continue;
             } else {
                 perror("Błąd odbierania komunikatu od kasjera");

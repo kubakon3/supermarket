@@ -131,7 +131,7 @@ int check_fire_flag(Sklep *sklep) {
   
 
 int create_semaphore() {
-    int semID = semget(SEM_KEY, 5, IPC_CREAT | 0600);
+    int semID = semget(SEM_KEY, 6, IPC_CREAT | 0600);
     if (semID == -1) {
         perror("Błąd tworzenia semafora");
         return -1;
@@ -150,7 +150,6 @@ int semaphore_p(int semID, int number) {
     struct sembuf bufor_sem = {number, -1, 0};
     while (semop(semID, &bufor_sem, 1) == -1) {
         if (errno == EINTR) {
-            // Przerwane przez sygnał (np. SIGCHLD) - ponów próbę
             continue;
         }
         perror("error semop P");
@@ -163,7 +162,6 @@ int semaphore_v(int semID, int number) {
     struct sembuf bufor_sem = {number, 1, 0};
     while (semop(semID, &bufor_sem, 1) == -1) {
         if (errno == EINTR) {
-            // Przerwane przez sygnał (np. SIGCHLD) - ponów próbę
             continue;
         }
         perror("error semop V");

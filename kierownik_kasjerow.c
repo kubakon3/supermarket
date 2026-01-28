@@ -72,13 +72,13 @@ void *kasjer(void *arg) {
                         perror("Błąd pobierania stanu kolejki");
                         pthread_exit(0);
                     }
-
+                    
                     if (buf.msg_qnum == 0) {
                         printf("\tKasjer %d o ID: %d kończy pracę ponieważ kolejka jest pusta.\n", index + 1, kasjer_id);
                         pthread_exit(0);
                     }
                 }
-                usleep(10000);
+                // usleep(10000);
                 continue;
             } else if (errno == EINTR) {
                 continue;
@@ -88,7 +88,7 @@ void *kasjer(void *arg) {
         }
         int czas = rand() % 8 + 3;
         printf("\tKasjer %d obsługuje klienta %d przez %d sekund\n", index + 1, msg.klient_id, czas);
-        sleep(czas);
+        // sleep(czas);
         msg.mtype = msg.klient_id;
         if (msgsnd(kasjer_id, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
             perror("Błąd wysyłania komunikatu od kasjera do klienta");
@@ -120,6 +120,7 @@ void aktualizuj_kasy() {
         if (active_cashier) {
             set_inactive_cashier(sklep->liczba_kas);
             printf("\tWysyłanie sygnału zamknięcia do kasy %d\n", sklep->liczba_kas + 1);
+            // pthread_join(kasjerzy[sklep->liczba_kas], NULL);
         }
     }
     printf("Aktualna liczba kas: %d\n", sklep->liczba_kas);
@@ -163,7 +164,7 @@ int main() {
         }
         aktywne_kasy[i] = 1;
     }
-    sleep(1);
+    // sleep(1);
     // Pętla monitorująca stan kas
     while (!check_fire_flag(sklep)) {
         if (semaphore_p(semID, 4) == -1) {
@@ -172,25 +173,28 @@ int main() {
         }
 
         aktualizuj_kasy();
-        sleep(4); 
+        // sleep(4); 
     }
-
-    // Zakończenie programu ()
+    printf("Kierownik kasjerów zakończył monitorowanie kas\n");
+    // Zakończenie programu
     for (int i = 0; i < MAX_KASY; i++) {
         if (aktywne_kasy[i] == 1)  {
-            if (pthread_join(aktywne_kasy[i], NULL) != 0) {
-                perror("Błąd oczekiwania na zakończenie wątku kasjera");
+            int result = pthread_join(kasjerzy[i], NULL);
+            if (result == 0) {
+                printf("Zakończono wątek kasjera %d\n", i + 1);
+            } else if (result == ESRCH) {
+                continue;
             } else {
-                printf("zakończono wątek kasjera: %d\n", aktywne_kasy[i]);
+                printf("Błąd pthread_join kasjera %d: errno=%d\n", i + 1, result);
             }
         }
     }
-
+    printf("wszyscy kasjerzy zakończyli pracę\n");
     // Odłączenie pamięci współdzielonej
     if (shmdt(sklep) == -1) {
         perror("Błąd odłączania segmentu pamięci dzielonej");
         exit(1);
     }
-
+    printf("Kierownik kasjerów zakończył pracę\n");
     return 0;
 }
