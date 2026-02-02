@@ -32,9 +32,9 @@ void increment_customers() {
     }
     
     // Semafor dla funkcji aktualizującej kasy
-    if (semaphore_v(semID, 4) == -1) {
-        perror("Błąd semaphore_v(4) w increment_customers");
-    }
+    // if (semaphore_v(semID, 4) == -1) {
+    //     perror("Błąd semaphore_v(4) w increment_customers");
+    // }
 }
 
 // Funkcja do zmniejszania liczby klientów
@@ -50,9 +50,9 @@ void decrement_customers() {
     }
     
     // Semafor dla funkcji aktualizującej kasy
-    if (semaphore_v(semID, 4) == -1) {
-        perror("Błąd semaphore_v(4) w decrement_customers");
-    }
+    // if (semaphore_v(semID, 4) == -1) {
+    //     perror("Błąd semaphore_v(4) w decrement_customers");
+    // }
 }
 
 int main() {
@@ -114,12 +114,13 @@ int main() {
     }
 
     // Wysłanie komunikatu do wybranej kasy
+    int kasa_id = sklep->kolejki_kas[cashier_msg_id];
     Komunikat msg;
-    msg.mtype = sklep->kolejki_kas[cashier_msg_id];
+    msg.mtype = cashier_id;
     msg.klient_id = pid;
 
-    printf("Klient %d ustawił się w kolejce %d o ID:  %d\n", pid, cashier_id, sklep->kolejki_kas[cashier_msg_id]);
-    if (msgsnd(msg.mtype, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
+    printf("Klient %d ustawił się w kolejce %d o ID:  %d\n", pid, cashier_id, kasa_id);
+    if (msgsnd(kasa_id, &msg, sizeof(msg) - sizeof(long), 0) == -1) {
         perror("Błąd wysyłania komunikatu klienta");
         shmdt(sklep);
         if (semaphore_v(semID, 1) == -1) {
@@ -131,7 +132,7 @@ int main() {
 
     // Oczekiwanie na odpowiedź od kasjera
     while (!check_fire_flag(sklep)) {
-        if (msgrcv(msg.mtype, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
+        if (msgrcv(kasa_id, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
                 // usleep(10000);
                 // if (check_fire_flag(sklep)) {

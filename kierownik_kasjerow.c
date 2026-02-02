@@ -37,7 +37,7 @@ void *kasjer(void *arg) {
     printf("\t\tAktywny kasjer: %d o id: %d \n", index + 1, kasjer_id);
     Komunikat msg;
     while (!check_fire_flag(sklep)) {
-        if (msgrcv(kasjer_id, &msg, sizeof(msg) - sizeof(long), kasjer_id, IPC_NOWAIT) == -1) {
+        if (msgrcv(kasjer_id, &msg, sizeof(msg) - sizeof(long), index + 1, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
 
                 int flaga = get_active_cashier(index);
@@ -146,10 +146,10 @@ int main() {
     // sleep(1);
     // Pętla monitorująca stan kas
     while (!check_fire_flag(sklep)) {
-        if (semaphore_p(semID, 4) == -1) {
-            perror("Błąd semaphore_p(4) w kierowniku");
-            break;
-        }
+        // if (semaphore_p(semID, 4) == -1) {
+        //     perror("Błąd semaphore_p(4) w kierowniku");
+        //     break;
+        // }
 
         aktualizuj_kasy();
         // sleep(4); 
