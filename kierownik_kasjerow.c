@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <sys/ipc.h>
@@ -19,39 +20,14 @@ extern int semID;
 pthread_t kasjerzy[MAX_KASY];
 extern int aktywne_kasy[MAX_KASY];
 
-// Funkcja obsługi sygnału SIGINT w kierowniku kasjerów
-void kierownik_signal_handler(int sig) {
-    if (sig == SIGUSR2) {
-        printf("Kierownik kasjerów otrzymał sygnał SIGUSR2. Kończenie pracy...\n");
-
-        // Wysłanie sygnału SIGTERM do wszystkich aktywnych kasjerów
-        for (int i = 0; i < MAX_KASY; i++) {
-            int flag = get_active_cashier(i);
-            if (flag == 1) {
-                if (pthread_kill(kasjerzy[i], SIGTERM) != 0) {
-                    perror("Błąd wysyłania SIGTERM do kasjera");
-                } else {
-                    printf("Wysłano sygnał SIGTERM do kasjera %d\n", i + 1);
-                }
-            }
-        }
-
-    }
-}
-
-// Handler sygnału SIGTERM dla kasjera - kończy wątek
-void handle_cashier_signal_fire(int sig) {
-    if (sig == SIGTERM) {
-        printf("\tKasjer otrzymał sygnał SIGTERM - kończenie pracy\n");
-        pthread_exit(0);
-    }
-}
-
 // Funkcja wykonywana przez wątek kasjera
 void *kasjer(void *arg) {
-    // Rejestracja obsługi sygnału SIGTERM
-    if (signal(SIGTERM, handle_cashier_signal_fire) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału SIGTERM w kasjerze");
+    struct sigaction sa_sigint;
+    sa_sigint.sa_handler = SIG_IGN;
+    sigemptyset(&sa_sigint.sa_mask);
+    sa_sigint.sa_flags = 0;
+    if (sigaction(SIGINT, &sa_sigint, NULL) == -1) {
+        perror("Błąd ignorowania SIGINT w kasjerze");
         pthread_exit(NULL);
     }
     
@@ -132,7 +108,16 @@ void aktualizuj_kasy() {
 }
 
 int main() {
-    signal(SIGINT, SIG_IGN);
+    // Ignorowanie SIGINT - kierownik kończy pracę przez fire_flag, nie przez sygnał
+    struct sigaction sa_sigint;
+    sa_sigint.sa_handler = SIG_IGN;
+    sigemptyset(&sa_sigint.sa_mask);
+    sa_sigint.sa_flags = 0;
+    if (sigaction(SIGINT, &sa_sigint, NULL) == -1) {
+        perror("Błąd ignorowania SIGINT w kierowniku");
+        exit(1);
+    }
+    
     // Dołączenie pamięci dzielonej
     sklep = get_shared_memory();
     if (sklep == NULL) {
@@ -143,12 +128,6 @@ int main() {
     if (semID == -1) {
         perror("Błąd dołączania semafora");
         shmdt(sklep);
-        exit(1);
-    }
-    
-    // Rejestracja obsługi sygnału SIGUSR2
-    if (signal(SIGUSR2, kierownik_signal_handler) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału SIGUSR2");
         exit(1);
     }
     

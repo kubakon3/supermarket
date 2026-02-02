@@ -113,7 +113,6 @@ void set_inactive_cashier(int index) {
 }
 
 int check_fire_flag(Sklep *sklep) {    
-    // create_semaphore();
     if (semaphore_p(semID, 0) == -1) {
         perror("Błąd semaphore_p w sygnale");
         return -1;
@@ -150,6 +149,7 @@ int semaphore_p(int semID, int number) {
     struct sembuf bufor_sem = {number, -1, 0};
     while (semop(semID, &bufor_sem, 1) == -1) {
         if (errno == EINTR) {
+            perror("semaphore_p EINTR\n");
             continue;
         }
         perror("error semop P");
@@ -162,6 +162,7 @@ int semaphore_v(int semID, int number) {
     struct sembuf bufor_sem = {number, 1, 0};
     while (semop(semID, &bufor_sem, 1) == -1) {
         if (errno == EINTR) {
+            perror("semaphore_v EINTR\n");
             continue;
         }
         perror("error semop V");

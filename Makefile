@@ -15,7 +15,7 @@ ipc.o: ipc.c ipc.h
 	$(CC) -c ipc.c -o ipc.o $(CFLAGS)
 	chmod 644 ipc.o
 
-strazak.o: strazak.c strazak.h
+strazak.o: strazak.c strazak.h ipc.h
 	$(CC) -c strazak.c -o strazak.o $(CFLAGS)
 	chmod 644 strazak.o
 

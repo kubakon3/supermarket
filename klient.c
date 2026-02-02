@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <pthread.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -54,19 +55,19 @@ void decrement_customers() {
     }
 }
 
-void customer_signal_handler() {
-    printf("Klient otrzymał sygnał SIGUSR2. Kończenie pracy...\n");
-    
-    if (shmdt(sklep) == -1) {
-        perror("Błąd odłączania segmentu pamięci dzielonej");
-        exit(1);
-    }
-    exit(0);
-}
-
 int main() {
     srand(time(NULL));
-    signal(SIGINT, SIG_IGN);
+    
+    // Ignorowanie SIGINT
+    struct sigaction sa_sigint;
+    sa_sigint.sa_handler = SIG_IGN;
+    sigemptyset(&sa_sigint.sa_mask);
+    sa_sigint.sa_flags = 0;
+    if (sigaction(SIGINT, &sa_sigint, NULL) == -1) {
+        perror("Błąd ignorowania SIGINT w kliencie");
+        exit(1);
+    }
+    
     // Dołączenie pamięci dzielonej
     sklep = get_shared_memory();
     if (sklep == NULL) {
@@ -80,16 +81,6 @@ int main() {
         exit(1);
     }
     
-    // Rejestracja obsługi sygnału SIGUSR2
-    if (signal(SIGUSR2, customer_signal_handler) == SIG_ERR) {
-        perror("Błąd rejestracji obsługi sygnału");
-        if (shmdt(sklep) == -1) {
-            perror("Błąd odłączania segmentu pamięci dzielonej");
-            exit(1);
-        }
-        exit(1);
-    }
-
     // Symulacja klienta
     increment_customers();
     pid = getpid();
@@ -139,10 +130,14 @@ int main() {
     }
 
     // Oczekiwanie na odpowiedź od kasjera
-    while (1) {
+    while (!check_fire_flag(sklep)) {
         if (msgrcv(msg.mtype, &msg, sizeof(msg) - sizeof(long), pid, IPC_NOWAIT) == -1) {
             if (errno == ENOMSG) {
                 // usleep(10000);
+                // if (check_fire_flag(sklep)) {
+                //     printf("Klient %d kończy pracę z powodu sygnału ewakuacji.\n", pid);
+                //     return 0;
+                // }
                 continue;
             } else {
                 perror("Błąd odbierania komunikatu od kasjera");
